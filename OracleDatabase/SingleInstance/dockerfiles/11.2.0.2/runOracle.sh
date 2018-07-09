@@ -174,6 +174,12 @@ trap _kill SIGKILL
 
 # Check whether database already exists
 if [ -d $ORACLE_BASE/oradata/$ORACLE_SID ]; then
+	DB_ALREADY_EXISTS="true"
+else
+	DB_ALREADY_EXISTS="false"
+fi;
+
+if [ $DB_ALREADY_EXISTS == "true" ]; then
    symLinkFiles;
    # Make sure audit file destination exists
    if [ ! -d $ORACLE_BASE/admin/$ORACLE_SID/adump ]; then
@@ -201,13 +207,34 @@ fi;
 # Check whether database is up and running
 $ORACLE_BASE/$CHECK_DB_FILE
 if [ $? -eq 0 ]; then
-  echo "#########################"
-  echo "DATABASE IS READY TO USE!"
-  echo "#########################"
 
-  # Execute custom provided startup scripts
-  runUserScripts $ORACLE_BASE/scripts/startup
-
+  echo "Success: Database is functioning properly."
+  if [ $DB_ALREADY_EXISTS == "false" ]; then
+	echo "Starting data import..."
+	
+	su -p oracle -c "mkdir -p $DATA_PUMP_DIR"
+	cp $ORACLE_BASE/dump/setup/$DATA_PUMP_FILE $DATA_PUMP_DIR
+	
+	declare -a schemas=("schema_1" "schema_2" "schema_3")
+  
+	for schema in "${schemas[@]}"
+	do
+		su -p oracle -c "/u01/app/oracle/product/11.2.0/xe/bin/impdp system/oracle NOLOGFILE=Y DIRECTORY=DATA_PUMP_DIR DUMPFILE=$DATA_PUMP_FILE SCHEMAS=$schema"
+	done
+ 
+	# Execute custom provided startup scripts
+	runUserScripts $ORACLE_BASE/scripts/startup
+	
+	echo "###########################################"
+	echo "DATA IMPORT DONE. DATABASE IS READY TO USE!"
+	echo "###########################################"
+  
+  else
+	echo "##############################################"
+	echo "DATA IMPORT SKIPPED. DATABASE IS READY TO USE!"
+	echo "Database was recreated from existing sources."
+	echo "##############################################"
+  fi;
 else
   echo "#####################################"
   echo "########### E R R O R ###############"
